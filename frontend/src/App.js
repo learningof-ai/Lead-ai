@@ -1,53 +1,64 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import "@/index.css";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { RealtimeProvider } from "@/context/RealtimeContext";
+import Layout from "@/components/Layout";
+import { FullPageLoading } from "@/components/PageHeader";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import Dashboard from "@/pages/Dashboard";
+import Leads from "@/pages/Leads";
+import Pipeline from "@/pages/Pipeline";
+import LiveCalls from "@/pages/LiveCalls";
+import VapiSetup from "@/pages/VapiSetup";
+import SetupGuide from "@/pages/SetupGuide";
+import WebhookLogs from "@/pages/WebhookLogs";
+import Settings from "@/pages/Settings";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+function Protected({ children }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <FullPageLoading />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <RealtimeProvider>
+      <Layout>{children}</Layout>
+    </RealtimeProvider>
   );
-};
+}
+
+function PublicOnly({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <FullPageLoading />;
+  if (user) return <Navigate to="/" replace />;
+  return children;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+      <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
+      <Route path="/" element={<Protected><Dashboard /></Protected>} />
+      <Route path="/leads" element={<Protected><Leads /></Protected>} />
+      <Route path="/pipeline" element={<Protected><Pipeline /></Protected>} />
+      <Route path="/live-calls" element={<Protected><LiveCalls /></Protected>} />
+      <Route path="/setup-guide" element={<Protected><SetupGuide /></Protected>} />
+      <Route path="/vapi-setup" element={<Protected><VapiSetup /></Protected>} />
+      <Route path="/webhook-logs" element={<Protected><WebhookLogs /></Protected>} />
+      <Route path="/settings" element={<Protected><Settings /></Protected>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

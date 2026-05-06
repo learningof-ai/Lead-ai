@@ -1,0 +1,36 @@
+{
+  "summary": "End-to-end testing of LeaseFlow (FastAPI + React + MongoDB). Backend: 34/34 pytest tests passed covering auth, agents CRUD, leads CRUD/CSV, stats, setup wizard, sheets config, demo seed/clear, webhook logs, and the public Vapi webhook (lead branch + Vapi event branch + auth modes + content-type + body cap + idempotency). Frontend: all 8 routes (Dashboard, Pipeline, Leads, Live Calls, Vapi Setup, Setup Guide, Webhook Logs, Settings) render correctly with no console errors after admin login; KPI cards, 7-day bar chart, status breakdown, kanban with 5 columns, leads table, webhook URL/secret copy fields, and Settings sub-cards (Google Sheets / Team / Demo data) all visible and populated after demo seed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login", "issues": ["Login page renders with form pinned to bottom-left of viewport (lots of whitespace at top); right pane image+copy is fine. Cosmetic only — submit still works."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_leaseflow.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: tidy Login page vertical layout so the form is centered (currently the SIGN IN block sits at the very bottom of the viewport with a large empty area above)",
+    "Optional: residual leads named 'Test Caller'/'Test Lead' from prior smoke runs are still in the DB (source=Manual). Not created by this iteration. Either delete them manually or filter out non-demo TEST data."
+  ],
+  "critical_code_review_comments": [
+    "vapi_webhook.py L231-233: precedence in `request.client.host if request.client else 'unknown'` — due to Python's `or` precedence the chain works, but parenthesizing the conditional would be clearer.",
+    "server.py uses deprecated `@app.on_event('startup'/'shutdown')` — FastAPI recommends lifespan context managers (works fine today, deprecation warning only).",
+    "/api/setup/test-webhook posts to `http://127.0.0.1:8001/api/public/vapi-webhook` (hard-coded). Acceptable for a self-test but a configurable internal URL would be cleaner.",
+    "/api/auth/team is exposed to all authenticated users (members can list owners). Consider `require_owner` or scrubbing emails for non-owners.",
+    "PATCH /api/agents and DELETE /api/leads have no owner-only guard — any authenticated member can rename agents or delete any lead. Tighten if multi-tenant.",
+    "demo_clear matches by activity message string ('Demo lead seeded') which is brittle — better to tag demo activity with a flag field.",
+    "Lead `phone` regex on webhook accepts dots and spaces but pipeline auto-link strips non-digits — fine, but document the canonicalization."
+  ],
+  "updated_files": ["/app/backend/tests/test_leaseflow.py", "/app/backend/tests/__init__.py"],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "100% (8/8 routes load, all key UI elements present, no console errors)"},
+  "test_credentials": "admin@form.rentals / leaseflow2026 (verified working). Global webhook secret env-loaded and accepted. Agent secrets auto-generated on /api/agents POST.",
+  "seed_data_creation": "Created 8 demo leads via /api/demo/seed during testing and cleared them via /api/demo/clear. Test agents created during pytest are auto-deleted by the session-scoped fixture teardown. Note: a few leftover 'Test Caller'/'Test Lead' leads from PRIOR smoke testing remain in the DB (Manual source) — not from this iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_leaseflow.py for regression. It is fully self-contained with session-scoped admin token + auto-cleanup of test agents and TEST_-prefixed leads. The webhook tests exercise all auth failure modes, content-type 415, body 413, idempotency replay, and Vapi event upserts. WebSocket /api/ws connects (LIVE indicator visible in sidebar). Login lands on '/' which the React router treats as dashboard.",
+  "rca of the issue": "No bugs found requiring RCA. All listed feature checks behave per spec."
+}
