@@ -1,0 +1,145 @@
+{
+  "theme": "Light",
+  "archetype": "1 - Organic & Earthy",
+  "colors": {
+    "background": {
+      "default": "#F9F8F6",
+      "surface": "#FFFFFF",
+      "surface_hover": "#F2F0EC",
+      "surface_muted": "#F0EFEB"
+    },
+    "border": {
+      "default": "#E5E2DC",
+      "focus": "#2A4B41"
+    },
+    "text": {
+      "primary": "#1A1C1B",
+      "secondary": "#6B6D6C",
+      "inverse": "#FFFFFF",
+      "accent": "#2A4B41"
+    },
+    "brand": {
+      "primary": "#2A4B41",
+      "primary_hover": "#1F3830",
+      "accent": "#C76D54",
+      "accent_hover": "#A85A45"
+    },
+    "status": {
+      "success": {
+        "bg": "#E8F3ED",
+        "text": "#245A41",
+        "border": "#A3D1BB"
+      },
+      "warning": {
+        "bg": "#FFF4E5",
+        "text": "#9E5D1D",
+        "border": "#F3C89B"
+      },
+      "danger": {
+        "bg": "#FDEDED",
+        "text": "#B33A3A",
+        "border": "#F1A7A7"
+      },
+      "info": {
+        "bg": "#E8F2F6",
+        "text": "#2C5B7A",
+        "border": "#9FC5DA"
+      },
+      "ringing": {
+        "bg": "#FFF4E5",
+        "text": "#9E5D1D",
+        "pulse": "rgba(243, 200, 155, 0.5)"
+      },
+      "connected": {
+        "bg": "#E8F3ED",
+        "text": "#245A41",
+        "pulse": "rgba(163, 209, 187, 0.5)"
+      }
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Cabinet Grotesk, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl tracking-tight leading-tight",
+      "h3": "text-xl sm:text-2xl tracking-tight leading-snug",
+      "h4": "text-lg font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-secondary",
+      "micro": "text-xs tracking-wider uppercase text-secondary"
+    }
+  },
+  "spacing": {
+    "container": "max-w-7xl mx-auto px-6 sm:px-8",
+    "section": "py-12 sm:py-20",
+    "card": "p-6 sm:p-8",
+    "widget": "p-4 sm:p-6"
+  },
+  "layout": {
+    "dashboard": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 align-items-start",
+    "kanban": "flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory h-[calc(100vh-12rem)]",
+    "kanban_column": "min-w-[320px] w-[320px] flex flex-col gap-3 snap-start",
+    "setup_wizard": "max-w-2xl mx-auto flex flex-col gap-12 py-16"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#2A4B41] text-white hover:bg-[#1F3830] transition-colors rounded-none px-6 py-2.5 font-medium border border-[#2A4B41]",
+      "secondary": "bg-transparent text-[#1A1C1B] hover:bg-[#F2F0EC] transition-colors rounded-none px-6 py-2.5 font-medium border border-[#E5E2DC]",
+      "accent": "bg-[#C76D54] text-white hover:bg-[#A85A45] transition-colors rounded-none px-6 py-2.5 font-medium border border-[#C76D54]"
+    },
+    "cards": {
+      "base": "bg-white border border-[#E5E2DC] shadow-sm transition-all duration-200 rounded-none",
+      "hoverable": "hover:-translate-y-1 hover:shadow-md hover:border-[#2A4B41]/30 rounded-none",
+      "glass": "bg-white/70 backdrop-blur-xl border border-white/40 shadow-sm rounded-none"
+    },
+    "status_badges": {
+      "base": "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border"
+    },
+    "inputs": {
+      "base": "w-full bg-[#F9F8F6] border border-[#E5E2DC] rounded-none px-4 py-2 text-[#1A1C1B] focus:border-[#2A4B41] focus:ring-1 focus:ring-[#2A4B41] transition-all"
+    }
+  },
+  "motion": {
+    "transition_default": "transition-all duration-200 ease-out",
+    "hover_lift": "hover:-translate-y-1 hover:shadow-md",
+    "pulse_ring": "animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite]",
+    "slide_in": "animate-in slide-in-from-bottom-4 duration-300 ease-out fade-in"
+  },
+  "visual_enhancers": {
+    "borders": "Use 1px solid borders to define hierarchy, avoiding soft shadows where possible. Neo-brutalist but elegant.",
+    "live_indicators": "Use pulsing dots (a small div with animate-ping behind a solid dot) for Live Call statuses.",
+    "icons": "Use Phosphor Icons (@phosphor-icons/react) with 'duotone' weight for a high-end, detailed look."
+  },
+  "images": {
+    "setup_wizard_hero": {
+      "url": "https://images.pexels.com/photos/30227710/pexels-photo-30227710.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Minimalist architecture building. Use this as a muted, low-opacity background image behind the main setup wizard or in the onboarding welcome screen to establish a high-end real-estate feel.",
+      "category": "hero_background"
+    },
+    "empty_state_leads": {
+      "url": "https://images.unsplash.com/photo-1769063238167-d00e112147c0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBhcGFydG1lbnQlMjBpbnRlcmlvciUyMGVtcHR5fGVufDB8fHx8MTc3ODA5MDE2Nnww&ixlib=rb-4.1.0&q=85",
+      "description": "Modern empty living room. Use this in the empty state of the Leads table or Kanban board to imply 'waiting for your first property lead'.",
+      "category": "empty_state"
+    },
+    "empty_state_calls": {
+      "url": "https://images.unsplash.com/photo-1555960840-b1b7fcbec685?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMGRlc2slMjBwaG9uZXxlbnwwfHx8fDE3NzgwOTAxNjZ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Clean desk with a device. Use this for the Live Calls empty state to signify 'standing by for incoming calls'.",
+      "category": "empty_state"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the color palette. DO NOT use generic Tailwind colors like bg-blue-500 or text-gray-500. Use the defined hex codes.",
+    "For the Setup Wizard, use 'The Tracing Beam' layout or a highly spaced vertical stepper with explicit copy buttons (Shadcn customized).",
+    "Kanban board MUST use horizontal scrolling with sticky column headers and tight gaps.",
+    "Live Calls require an animated pulse effect for 'ringing' or 'connected' states.",
+    "Always wrap interactive elements (buttons, inputs) with `data-testid` attributes (e.g., `data-testid='setup-webhook-copy'`).",
+    "Empty states MUST include the provided image URLs and a clear CTA button.",
+    "Use Phosphor Icons (yarn add @phosphor-icons/react) - duotone variant.",
+    "All cards and form elements must have sharp corners (rounded-none) to reflect the Swiss/Architecture theme, except for status badges which can be fully rounded.",
+    "Ensure high contrast: `text-[#1A1C1B]` on `bg-[#F9F8F6]`."
+  ]
+}
