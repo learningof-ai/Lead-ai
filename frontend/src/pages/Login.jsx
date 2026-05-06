@@ -25,16 +25,17 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-[var(--bg)]" data-testid="login-page">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[var(--bg)]" data-testid="login-page">
       <Toaster position="top-right" richColors />
       <div
-        className="hidden lg:block relative overflow-hidden min-h-screen bg-cover bg-center"
+        className="hidden lg:flex lg:w-1/2 relative bg-cover bg-center"
         style={{
+          minHeight: "100vh",
           backgroundImage: "url('https://images.pexels.com/photos/30227710/pexels-photo-30227710.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=1200&w=940')",
         }}
       >
         <div className="absolute inset-0 bg-[var(--brand)]/40" />
-        <div className="relative z-10 h-full flex flex-col justify-between p-12 text-white">
+        <div className="relative z-10 flex flex-col justify-between p-12 text-white w-full">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white flex items-center justify-center">
               <Phone weight="duotone" size={20} color="var(--brand)" />
@@ -55,7 +56,7 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center p-8 min-h-screen">
+      <div className="flex-1 flex items-center justify-center p-8 min-h-screen lg:min-h-0">
         <form onSubmit={submit} className="w-full max-w-sm space-y-6" data-testid="login-form">
           <div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2">Sign in</div>
