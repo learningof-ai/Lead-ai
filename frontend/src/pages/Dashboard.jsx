@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useRealtime } from "@/context/RealtimeContext";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import QualityBadge from "@/components/QualityBadge";
 import EmptyState from "@/components/EmptyState";
 import {
   Phone, TrendUp, Users, ChartBar, ArrowUpRight, BookOpenText,
@@ -152,6 +153,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <StatusBadge status={l.status} />
+                <QualityBadge quality={l.quality} score={l.quality_score} />
                 <span className="text-[11px] text-[var(--text-faint)] tabular-nums w-20 text-right">
                   {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>

@@ -25,6 +25,9 @@ from starlette.middleware.cors import CORSMiddleware
 
 from auth import (User, bootstrap_admin, create_token, get_current_user,
                   hash_password, require_owner, verify_password)
+from emails import (lead_confirmation_html, lead_confirmation_text,
+                    manager_notification_html, manager_notification_text,
+                    score_to_quality, send_email, trigger_lead_emails)
 from realtime import hub
 from sheets import (append_leads, get_service_account_email, parse_json_key,
                     test_connection)
@@ -94,29 +97,58 @@ class Agent(BaseModel):
 class LeadCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     phone: Optional[str] = None
+    email: Optional[str] = None
     location: Optional[str] = None
     budget: Optional[str] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    move_in_date: Optional[str] = None
+    bedrooms: Optional[int] = None
+    pets: Optional[bool] = None
     property_type: Optional[str] = None
     urgency: Optional[str] = None
     notes: Optional[str] = None
     status: str = "New"
     source: str = "Manual"
+    quality: Optional[str] = None
+    quality_score: Optional[float] = None
 
 
 class LeadUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    email: Optional[str] = None
     location: Optional[str] = None
     budget: Optional[str] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    move_in_date: Optional[str] = None
+    bedrooms: Optional[int] = None
+    pets: Optional[bool] = None
     property_type: Optional[str] = None
     urgency: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    quality: Optional[str] = None
+    quality_score: Optional[float] = None
 
 
 class SheetsConfigReq(BaseModel):
     sheet_id: str = Field(min_length=10)
     service_account_json: str = Field(min_length=20)
+
+
+class EmailConfigReq(BaseModel):
+    resend_api_key: Optional[str] = None
+    from_email: str = Field(default="onboarding@resend.dev")
+    manager_email: str
+    manager_name: Optional[str] = "Property Manager"
+    property_name: Optional[str] = "LeaseFlow"
+    send_lead_confirmation: bool = True
+
+
+class EmailTestReq(BaseModel):
+    to: str
 
 
 # ---------------------------------------------------------------------------
@@ -343,13 +375,21 @@ async def create_lead(req: LeadCreate, user: User = Depends(get_current_user)):
         "user_id": user.user_id,
         "full_name": req.full_name,
         "phone": req.phone,
+        "email": req.email,
         "location": req.location,
         "budget": req.budget,
+        "budget_min": req.budget_min,
+        "budget_max": req.budget_max,
+        "move_in_date": req.move_in_date,
+        "bedrooms": req.bedrooms,
+        "pets": req.pets,
         "property_type": req.property_type,
         "urgency": req.urgency,
         "notes": req.notes,
         "source": req.source,
         "status": req.status,
+        "quality": req.quality,
+        "quality_score": req.quality_score,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -581,6 +621,28 @@ async def setup_info(request: Request, user: User = Depends(get_current_user)):
                     }
                 }
             }
+        },
+        "analysis_plan": {
+            "structuredDataSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Full name of the person. Ask for it naturally during the conversation."},
+                    "email": {"type": "string", "description": "Email address. Confirm spelling by reading it back."},
+                    "phone": {"type": "string", "description": "Phone number including country code if provided."},
+                    "budget_min": {"type": "number", "description": "Minimum monthly rent budget in USD."},
+                    "budget_max": {"type": "number", "description": "Maximum monthly rent budget in USD."},
+                    "move_in_date": {"type": "string", "description": "Desired move-in date or timeframe."},
+                    "bedrooms": {"type": "number", "description": "Number of bedrooms needed. 0 = studio."},
+                    "location_pref": {"type": "string", "description": "Preferred neighborhood or area."},
+                    "pets": {"type": "boolean", "description": "Whether the lead has pets."},
+                    "notes": {"type": "string", "description": "Any other important context."},
+                    "quality_score": {"type": "number", "description": "Rate this lead 1-10 based on readiness (40%), budget clarity (30%), responsiveness (20%), info completeness (10%). 8-10 = hot, 5-7 = warm, 1-4 = cold."},
+                    "outcome": {"type": "string", "enum": ["lead_captured", "no_contact_info", "not_interested", "wrong_number", "incomplete", "unknown"]}
+                },
+                "required": ["outcome", "quality_score"]
+            },
+            "summaryPrompt": "Summarize this rental inquiry call in 2-3 sentences. Include what the lead is looking for, their timeline, budget if mentioned, and any specific requirements. Be factual and concise — this is for the property manager's review.",
+            "system_prompt_addendum": "IMPORTANT — at the end of every call you MUST collect: 1) the caller's full name, 2) their best contact email (confirm spelling), 3) phone number, 4) monthly budget range, 5) desired move-in date, 6) number of bedrooms. If a caller is reluctant to share contact info, explain we only use it to send matching listings — we never spam or sell data. Before ending the call, always confirm: 'Just to confirm — I have your name as [name], email [email], and phone [phone]. Is that all correct?'"
         }
     }
 
@@ -595,23 +657,63 @@ async def test_webhook(
     agent_id = payload.get("agent_id")
     secret = payload.get("secret")
     use_bad_secret = payload.get("bad_secret", False)
+    mode = payload.get("mode", "tool")  # "tool" or "eoc_report"
     if not agent_id or not secret:
         raise HTTPException(status_code=400, detail="agent_id and secret required")
-    body = {
-        "agent_id": agent_id,
-        "caller_phone": "+15551230000",
-        "extracted_name": "Test Caller",
-        "extracted_location": "Test City",
-        "extracted_budget": "$1500",
-        "extracted_property_type": "apartment",
-        "extracted_urgency": "this week",
-        "notes": "🧪 Generated by Setup Wizard test button",
-    }
+
+    if mode == "eoc_report":
+        body = {
+            "agent_id": agent_id,
+            "message": {
+                "type": "end-of-call-report",
+                "endedReason": "customer-ended-call",
+                "durationSeconds": 184,
+                "call": {
+                    "id": f"vapi_test_{uuid.uuid4().hex[:8]}",
+                    "assistantId": agent_id,
+                    "startedAt": (datetime.now(timezone.utc) - timedelta(seconds=184)).isoformat(),
+                    "endedAt": datetime.now(timezone.utc).isoformat(),
+                    "customer": {"number": "+15551234567"},
+                },
+                "artifact": {
+                    "transcript": "AI: Hi, thanks for calling.\nUser: I'm looking for a 2-bedroom in Brooklyn.\nAI: Great, what's your budget?\nUser: Around 2,800 to 3,200 a month, and I have a small dog.",
+                    "recordingUrl": "https://example.com/recording.mp3",
+                },
+                "analysis": {
+                    "summary": "Caller wants 2BR in Brooklyn, $2.8–$3.2K/mo, has a small dog, ready to move next month.",
+                    "structuredData": {
+                        "name": "Test EOC Caller",
+                        "email": "test@example.com",
+                        "phone": "+15551234567",
+                        "budget_min": 2800,
+                        "budget_max": 3200,
+                        "move_in_date": "next month",
+                        "bedrooms": 2,
+                        "location_pref": "Brooklyn",
+                        "pets": True,
+                        "notes": "Has a small dog",
+                        "quality_score": 8,
+                        "outcome": "lead_captured",
+                    },
+                },
+            },
+        }
+    else:
+        body = {
+            "agent_id": agent_id,
+            "caller_phone": "+15551230000",
+            "extracted_name": "Test Caller",
+            "extracted_location": "Test City",
+            "extracted_budget": "$1500",
+            "extracted_property_type": "apartment",
+            "extracted_urgency": "this week",
+            "notes": "🧪 Generated by Setup Wizard test button",
+        }
     sent_secret = (secret + "_BAD") if use_bad_secret else secret
     headers = {"Content-Type": "application/json", "x-vapi-secret": sent_secret,
                "x-request-id": f"test_{uuid.uuid4().hex}"}
     started = datetime.now(timezone.utc)
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             r = await client.post("http://127.0.0.1:8001/api/public/vapi-webhook",
                                    json=body, headers=headers)
@@ -731,36 +833,51 @@ async def demo_seed(user: User = Depends(require_owner)):
         })
 
     samples = [
-        ("Maya Patel", "+14155551001", "Mission District, SF", "$2800",
-         "1 bedroom apartment", "this week", "New",
-         "Wants pet-friendly, 1BR near BART"),
-        ("James Carter", "+14155551002", "Brooklyn Heights, NY", "$3200",
-         "studio", "this month", "Contacted", "Remote worker, needs natural light"),
-        ("Sofia Reyes", "+12135551003", "Silver Lake, LA", "$2400",
-         "1 bedroom apartment", "ASAP", "Qualified", "Pre-approved, good credit"),
-        ("Daniel Wright", "+13125551004", "Lincoln Park, Chicago", "$1900",
-         "studio", "next month", "New", "Recent grad, first apartment"),
-        ("Aisha Khan", "+12145551005", "Uptown, Dallas", "$2600",
-         "2 bedroom apartment", "this week", "Converted",
+        # name, phone, location, budget_low, budget_high, ptype, beds, urgency, status, score, pets, email, notes
+        ("Maya Patel", "+14155551001", "Mission District, SF", 2600, 2800,
+         "1 bedroom apartment", 1, "this week", "Qualified", 9, True, "maya.patel@example.com",
+         "Wants pet-friendly, 1BR near BART. Pre-approved."),
+        ("James Carter", "+14155551002", "Brooklyn Heights, NY", 3000, 3500,
+         "studio", 0, "this month", "Contacted", 7, False, "james.c@example.com",
+         "Remote worker, needs natural light"),
+        ("Sofia Reyes", "+12135551003", "Silver Lake, LA", 2200, 2400,
+         "1 bedroom apartment", 1, "ASAP", "Qualified", 8, False, "sofia@example.com",
+         "Pre-approved, good credit"),
+        ("Daniel Wright", "+13125551004", "Lincoln Park, Chicago", 1700, 1900,
+         "studio", 0, "next month", "New", 5, False, None,
+         "Recent grad, first apartment"),
+        ("Aisha Khan", "+12145551005", "Uptown, Dallas", 2500, 2600,
+         "2 bedroom apartment", 2, "this week", "Converted", 10, True, "aisha.k@example.com",
          "Signed lease — moving in next Friday"),
-        ("Liam Walsh", "+13035551006", "RiNo, Denver", "$2200",
-         "loft", "browsing", "Lost", "Found another place"),
-        ("Hannah Lee", "+12065551007", "Capitol Hill, Seattle", "$2750",
-         "1 bedroom apartment", "this week", "Contacted",
+        ("Liam Walsh", "+13035551006", "RiNo, Denver", 2000, 2200,
+         "loft", 1, "browsing", "Lost", 3, False, None,
+         "Found another place"),
+        ("Hannah Lee", "+12065551007", "Capitol Hill, Seattle", 2600, 2900,
+         "1 bedroom apartment", 1, "this week", "Contacted", 6, False, "hannah.lee@example.com",
          "Wants south-facing windows"),
-        ("Marcus Bell", "+14045551008", "Old Fourth Ward, Atlanta", "$2100",
-         "2 bedroom townhome", "ASAP", "Qualified", "Couple with one cat"),
+        ("Marcus Bell", "+14045551008", "Old Fourth Ward, Atlanta", 1900, 2100,
+         "2 bedroom townhome", 2, "ASAP", "Qualified", 8, True, "marcus@example.com",
+         "Couple with one cat"),
     ]
     inserted = 0
     base_dt = datetime.now(timezone.utc)
     for i, s in enumerate(samples):
+        (name, phone, loc, bmin, bmax, ptype, beds, urgency, status, score, pets, email, notes) = s
         ts = (base_dt - timedelta(hours=i * 6)).isoformat()
         lead_id = str(uuid.uuid4())
+        quality = score_to_quality(score)
         await db.leads.insert_one({
             "id": lead_id, "user_id": user.user_id,
-            "full_name": s[0], "phone": s[1], "location": s[2],
-            "budget": s[3], "property_type": s[4], "urgency": s[5],
-            "status": s[6], "source": "Vapi Call (demo)", "notes": s[7],
+            "full_name": name, "phone": phone, "email": email,
+            "location": loc, "location_pref": loc,
+            "budget": f"${bmin:,}–${bmax:,}",
+            "budget_min": bmin, "budget_max": bmax,
+            "property_type": ptype, "bedrooms": beds, "pets": pets,
+            "move_in_date": urgency, "urgency": urgency,
+            "status": status, "source": "Vapi Call (demo)", "notes": notes,
+            "quality": quality, "quality_score": score,
+            "outcome": "lead_captured" if status != "Lost" else "not_interested",
+            "agent_notified": False, "lead_thanked": False,
             "created_at": ts, "updated_at": ts,
         })
         await db.lead_activity.insert_one({
@@ -776,6 +893,87 @@ async def demo_clear(user: User = Depends(require_owner)):
     await db.leads.delete_many({"source": {"$in": ["Vapi Call (demo)"]}})
     await db.lead_activity.delete_many({"message": "Demo lead seeded"})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Email config
+# ---------------------------------------------------------------------------
+
+
+@api.get("/email/config")
+async def get_email_cfg(user: User = Depends(get_current_user)):
+    cfg = await db.email_config.find_one({}, {"_id": 0}) or {}
+    has_key = bool(cfg.get("resend_api_key") or os.environ.get("RESEND_API_KEY"))
+    return {
+        "configured": bool(cfg.get("manager_email")),
+        "has_api_key": has_key,
+        "from_email": cfg.get("from_email") or "onboarding@resend.dev",
+        "manager_email": cfg.get("manager_email") or "",
+        "manager_name": cfg.get("manager_name") or "Property Manager",
+        "property_name": cfg.get("property_name") or "LeaseFlow",
+        "send_lead_confirmation": cfg.get("send_lead_confirmation", True),
+    }
+
+
+@api.post("/email/config")
+async def set_email_cfg(req: EmailConfigReq, user: User = Depends(require_owner)):
+    update = {
+        "from_email": req.from_email,
+        "manager_email": req.manager_email,
+        "manager_name": req.manager_name or "Property Manager",
+        "property_name": req.property_name or "LeaseFlow",
+        "send_lead_confirmation": req.send_lead_confirmation,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if req.resend_api_key:
+        update["resend_api_key"] = req.resend_api_key
+    await db.email_config.update_one({}, {"$set": update,
+                                          "$setOnInsert": {"id": str(uuid.uuid4())}},
+                                     upsert=True)
+    return {"ok": True}
+
+
+@api.post("/email/test")
+async def email_test(req: EmailTestReq, user: User = Depends(require_owner)):
+    cfg = await db.email_config.find_one({}, {"_id": 0}) or {}
+    api_key = cfg.get("resend_api_key") or os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No Resend API key configured")
+    sender = cfg.get("from_email") or "onboarding@resend.dev"
+    sample_lead = {
+        "id": "demo-lead",
+        "full_name": "Demo Caller",
+        "phone": "+15551234567",
+        "email": req.to,
+        "budget_min": 1800,
+        "budget_max": 2400,
+        "move_in_date": "next month",
+        "bedrooms": 1,
+        "location": "Brooklyn",
+        "pets": True,
+        "quality": "hot",
+        "quality_score": 8,
+        "outcome": "lead_captured",
+        "duration_seconds": 247,
+        "call_summary": "Caller is looking for a 1BR in Brooklyn, $1.8–$2.4K, ready to move next month, has one cat. Pre-approved.",
+        "vapi_call_id": "test_call_demo",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    r = await send_email(
+        api_key, sender=sender, to=req.to,
+        subject="[LeaseFlow Test] Manager notification preview",
+        html=manager_notification_html(sample_lead, cfg.get("manager_name") or "Property Manager"),
+        text=manager_notification_text(sample_lead),
+    )
+    return r
+
+
+@api.post("/email/resend/{lead_id}")
+async def resend_emails_for_lead(lead_id: str, user: User = Depends(get_current_user)):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return await trigger_lead_emails(db, lead)
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +1020,8 @@ async def on_startup() -> None:
     await db.leads.create_index("id", unique=True)
     await db.leads.create_index([("created_at", -1)])
     await db.leads.create_index("status")
+    await db.leads.create_index("vapi_call_id", sparse=True)
+    await db.leads.create_index("quality", sparse=True)
     await db.call_sessions.create_index("vapi_call_id", unique=True)
     await db.call_sessions.create_index("id", unique=True)
     await db.call_sessions.create_index([("created_at", -1)])

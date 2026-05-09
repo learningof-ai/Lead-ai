@@ -85,13 +85,14 @@ function TestPanel({ agent, onSent }) {
   const [result, setResult] = useState(null);
   const [bad, setBad] = useState(null);
 
-  const run = async (badSecret) => {
+  const run = async (mode, badSecret = false) => {
     setRunning(true);
     try {
       const r = await api.post("/setup/test-webhook", {
         agent_id: agent.agent_id,
         secret: agent.webhook_secret,
         bad_secret: badSecret,
+        mode,
       });
       if (badSecret) setBad(r.data);
       else setResult(r.data);
@@ -106,10 +107,13 @@ function TestPanel({ agent, onSent }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => run(false)} disabled={running} className="btn-primary" data-testid="test-webhook-btn">
-          <PaperPlaneTilt size={14} weight="duotone" /> Send test (valid secret)
+        <button onClick={() => run("tool", false)} disabled={running} className="btn-primary" data-testid="test-webhook-btn">
+          <PaperPlaneTilt size={14} weight="duotone" /> Send tool test
         </button>
-        <button onClick={() => run(true)} disabled={running} className="btn-secondary" data-testid="test-bad-secret-btn">
+        <button onClick={() => run("eoc_report", false)} disabled={running} className="btn-secondary" data-testid="test-eoc-btn">
+          <PaperPlaneTilt size={14} weight="duotone" /> Send end-of-call test
+        </button>
+        <button onClick={() => run("tool", true)} disabled={running} className="btn-ghost" data-testid="test-bad-secret-btn">
           <ShieldCheck size={14} weight="duotone" /> Send with bad secret
         </button>
       </div>
@@ -124,6 +128,12 @@ function TestPanel({ agent, onSent }) {
           </div>
           {result.response?.lead_id && (
             <div className="text-[12px] text-[var(--success-text)]">✓ Lead created: <code className="font-mono">{result.response.lead_id}</code></div>
+          )}
+          {result.response?.event && (
+            <div className="text-[12px] text-[var(--text-muted)]">Event: {result.response.event}</div>
+          )}
+          {result.response?.emails && (
+            <div className="text-[12px] text-[var(--text-muted)]">Emails: {JSON.stringify(result.response.emails)}</div>
           )}
           {result.response?.error && (
             <div className="text-[var(--danger-text)]">{result.response.error}</div>
@@ -289,9 +299,39 @@ export default function VapiSetup() {
                 <div>
                   <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Step 4</div>
                   <h3 className="font-display text-xl">Send a test</h3>
-                  <p className="text-[var(--text-muted)] text-[13px] mt-1">We'll POST a sample lead to your webhook from this server. If it inserts, your config is correct.</p>
+                  <p className="text-[var(--text-muted)] text-[13px] mt-1">"Tool test" simulates the legacy <code className="font-mono">capture_rental_lead</code> path. "End-of-call test" simulates the new Vapi analysis-plan structuredData payload — that's what production calls will fire.</p>
                 </div>
                 <TestPanel agent={selected} onSent={load} />
+              </section>
+
+              <section className="card p-6 space-y-4" data-testid="analysis-plan-card">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Recommended (production-grade)</div>
+                  <h3 className="font-display text-xl">Vapi Analysis Plan — structured outputs</h3>
+                  <p className="text-[var(--text-muted)] text-[13px] mt-1">
+                    Instead of the function-tool path, configure your Vapi assistant's <strong>Analysis Plan</strong> to emit structured data at end-of-call. LeaseFlow auto-extracts every field, scores the lead, and triggers emails.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Where to paste in Vapi</div>
+                    <p className="text-[12px] text-[var(--text)] leading-relaxed">Vapi Dashboard → your Assistant → <strong>Analysis Plan</strong>. Set Server URL + secret (same as above). Paste the schema below as <strong>Structured Data Schema</strong>, the prompt as <strong>Summary Prompt</strong>, and append the system-prompt fragment to your assistant's system prompt.</p>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Structured Data Schema (JSON)</label>
+                    <pre className="bg-[var(--surface-muted)] border border-[var(--border)] p-4 text-[11px] font-mono overflow-x-auto whitespace-pre" data-testid="analysis-schema-json">
+{JSON.stringify(info?.analysis_plan?.structuredDataSchema || {}, null, 2)}
+                    </pre>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Summary Prompt</label>
+                    <CopyField value={info?.analysis_plan?.summaryPrompt || ""} mono={false} testId="summary-prompt" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">System prompt addendum (append to your assistant's system prompt)</label>
+                    <CopyField value={info?.analysis_plan?.system_prompt_addendum || ""} mono={false} testId="system-addendum" />
+                  </div>
+                </div>
               </section>
             </>
           )}

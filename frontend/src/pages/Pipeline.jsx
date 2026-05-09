@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useRealtime } from "@/context/RealtimeContext";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import QualityBadge from "@/components/QualityBadge";
 import { toast } from "sonner";
 
 const COLUMNS = [
@@ -30,12 +31,20 @@ function LeadCard({ lead, isOverlay = false }) {
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="font-medium text-[13px] text-[var(--text)] truncate">{lead.full_name}</div>
+        <QualityBadge quality={lead.quality} score={lead.quality_score} />
       </div>
       <div className="text-[11px] text-[var(--text-muted)] space-y-0.5">
         {lead.phone && <div className="font-mono">{lead.phone}</div>}
-        {lead.location && <div>{lead.location}</div>}
-        {(lead.budget || lead.property_type) && (
-          <div>{[lead.budget, lead.property_type].filter(Boolean).join(" · ")}</div>
+        {lead.email && <div className="truncate">{lead.email}</div>}
+        {(lead.location || lead.location_pref) && <div>{lead.location || lead.location_pref}</div>}
+        {(lead.budget_min || lead.budget_max || lead.budget) && (
+          <div>
+            {lead.budget_min && lead.budget_max
+              ? `$${Math.round(lead.budget_min)}–$${Math.round(lead.budget_max)}`
+              : (lead.budget || `$${Math.round(lead.budget_min || lead.budget_max)}+`)}
+            {lead.bedrooms != null && ` · ${lead.bedrooms}bd`}
+            {lead.pets === true && " · pets"}
+          </div>
         )}
       </div>
       <div className="flex items-center justify-between mt-3">

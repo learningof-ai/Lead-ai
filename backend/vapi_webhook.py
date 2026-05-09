@@ -33,6 +33,8 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from realtime import hub
+from emails import (score_to_quality, derive_status_from_outcome_and_quality,
+                    trigger_lead_emails)
 
 router = APIRouter()
 logger = logging.getLogger("vapi-webhook")
@@ -44,6 +46,44 @@ DUMMY_SECRET = "whsec_" + ("0" * 64)
 
 PHONE_RE = re.compile(r"^[+0-9 ()\-\.]+$")
 AGENT_ID_RE = re.compile(r"^agent_[a-zA-Z0-9_-]+$")
+
+
+def _parse_budget_range(raw: Any) -> Dict[str, Optional[float]]:
+    """Parse '$1,500 - $2,000' or '1500-2000' or '1500' → {min, max}."""
+    if raw is None:
+        return {"min": None, "max": None}
+    if isinstance(raw, (int, float)):
+        return {"min": float(raw), "max": None}
+    if not isinstance(raw, str):
+        return {"min": None, "max": None}
+    nums = re.findall(r"\d+(?:\.\d+)?", raw.replace(",", ""))
+    if not nums:
+        return {"min": None, "max": None}
+    vals = [float(n) for n in nums]
+    if len(vals) == 1:
+        return {"min": vals[0], "max": None}
+    return {"min": min(vals), "max": max(vals)}
+
+
+def _coerce_int(v: Any) -> Optional[int]:
+    if v is None:
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_bool(v: Any) -> Optional[bool]:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("true", "yes", "y", "1"):
+            return True
+        if s in ("false", "no", "n", "0"):
+            return False
+    return None
 
 
 def _safe_eq(a: str, b: str) -> bool:
@@ -428,13 +468,131 @@ async def vapi_webhook(request: Request) -> Response:
                 "created_at": now_iso,
             })
 
-        # Broadcast
+        # ----------------------------------------------------------------
+        # NEW: end-of-call-report → derive lead from analysis.structuredData
+        # ----------------------------------------------------------------
+        new_lead_id: Optional[str] = None
+        email_results: Dict[str, str] = {}
+        if evt_type == "end-of-call-report":
+            artifact = m.get("artifact") or {}
+            analysis = m.get("analysis") or {}
+            sd = analysis.get("structuredData") or {}
+            transcript_full = artifact.get("transcript")
+            recording_url = artifact.get("recordingUrl")
+            call_summary = analysis.get("summary")
+
+            # Parse budget (structured fields OR freeform range)
+            budget_min = sd.get("budget_min")
+            budget_max = sd.get("budget_max")
+            if budget_min is None and budget_max is None and sd.get("budget_range"):
+                br = _parse_budget_range(sd.get("budget_range"))
+                budget_min, budget_max = br["min"], br["max"]
+            try:
+                budget_min = float(budget_min) if budget_min is not None else None
+                budget_max = float(budget_max) if budget_max is not None else None
+            except (TypeError, ValueError):
+                budget_min = budget_max = None
+
+            outcome_raw = (sd.get("outcome") or m.get("endedReason") or "unknown")
+            outcome = re.sub(r"[^a-z_]", "_", str(outcome_raw).lower())
+            valid_outcomes = {"lead_captured", "no_contact_info", "not_interested",
+                              "wrong_number", "incomplete", "unknown"}
+            if outcome not in valid_outcomes:
+                outcome = "unknown"
+
+            quality_score = sd.get("quality_score")
+            try:
+                quality_score = float(quality_score) if quality_score is not None else None
+            except (TypeError, ValueError):
+                quality_score = None
+            quality = score_to_quality(quality_score)
+            status = derive_status_from_outcome_and_quality(outcome, quality)
+
+            # Idempotency by vapi_call_id (prevent duplicate leads on event replay)
+            existing_lead = await db.leads.find_one(
+                {"vapi_call_id": vapi_call_id}, {"_id": 0, "id": 1}
+            )
+
+            if existing_lead:
+                new_lead_id = existing_lead["id"]
+            elif outcome != "wrong_number":  # don't waste rows on misdials
+                lead_id = str(uuid.uuid4())
+                lead_doc = {
+                    "id": lead_id,
+                    "user_id": user_id,
+                    "full_name": (sd.get("name") or "").strip() or "Unknown caller",
+                    "phone": (sd.get("phone") or caller_phone),
+                    "email": (sd.get("email") or "").strip() or None,
+                    "budget_min": budget_min,
+                    "budget_max": budget_max,
+                    "budget": (f"${int(budget_min):,}–${int(budget_max):,}"
+                               if budget_min and budget_max
+                               else (f"${int(budget_min):,}+"
+                                     if budget_min else None)),
+                    "move_in_date": sd.get("move_in_date") or None,
+                    "bedrooms": _coerce_int(sd.get("bedrooms")),
+                    "location": sd.get("location_pref") or None,
+                    "location_pref": sd.get("location_pref") or None,
+                    "property_type": (f"{_coerce_int(sd.get('bedrooms'))} bed"
+                                       if _coerce_int(sd.get("bedrooms")) else None),
+                    "pets": _coerce_bool(sd.get("pets")),
+                    "urgency": sd.get("move_in_date"),
+                    "notes": sd.get("notes") or None,
+                    "source": "Vapi Call",
+                    "status": status,
+                    "quality": quality,
+                    "quality_score": quality_score,
+                    "outcome": outcome,
+                    "vapi_call_id": vapi_call_id,
+                    "agent_id": agent_hint,
+                    "call_summary": call_summary,
+                    "call_started_at": call.get("startedAt"),
+                    "call_ended_at": call.get("endedAt"),
+                    "duration_seconds": base.get("duration_seconds"),
+                    "recording_url": recording_url,
+                    "transcript": (str(transcript_full)[:8000]
+                                   if transcript_full else None),
+                    "agent_notified": False,
+                    "lead_thanked": False,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                }
+                try:
+                    await db.leads.insert_one(lead_doc.copy())
+                    new_lead_id = lead_id
+                    # Link the call session to the lead
+                    await db.call_sessions.update_one(
+                        {"id": session_id},
+                        {"$set": {"lead_id": lead_id, "lead_link_confidence": "exact"}},
+                    )
+                    await db.lead_activity.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "lead_id": lead_id,
+                        "user_id": user_id,
+                        "kind": "created",
+                        "message": f"Lead captured from Vapi call ({quality}, score {quality_score or '?'}/10)",
+                        "created_at": now_iso,
+                    })
+                    # Broadcast new lead
+                    await hub.broadcast("lead_created", lead_doc)
+                    # Trigger emails (non-blocking)
+                    try:
+                        email_results = await trigger_lead_emails(db, lead_doc)
+                    except Exception as ee:
+                        _log("error", request_id, "email_trigger_failed", error=str(ee))
+                except Exception as ie:
+                    _log("error", request_id, "lead_insert_failed", error=str(ie))
+
+        # Broadcast call session
         full = await db.call_sessions.find_one({"id": session_id}, {"_id": 0})
         await hub.broadcast("call_session", full or {"id": session_id})
 
-        return await finish(200, {"success": True, "session_id": session_id, "event": evt_type},
+        return await finish(200, {"success": True, "session_id": session_id,
+                                   "event": evt_type, "lead_id": new_lead_id,
+                                   "emails": email_results},
                             "info", "success",
                             {"agent_id": agent_hint, "user_id": user_id,
+                             "lead_id": new_lead_id,
                              "event_type": evt_type, "has_phone": bool(caller_phone)})
 
     # ============================================================================
@@ -525,7 +683,15 @@ async def vapi_webhook(request: Request) -> Response:
     # Broadcast
     await hub.broadcast("lead_created", lead_doc)
 
-    return await finish(200, {"success": True, "lead_id": lead_id}, "info", "success",
+    # Trigger emails (non-blocking; emails also fire from the EOC-report branch)
+    email_results: Dict[str, str] = {}
+    try:
+        email_results = await trigger_lead_emails(db, lead_doc)
+    except Exception as ee:
+        _log("error", request_id, "email_trigger_failed", error=str(ee))
+
+    return await finish(200, {"success": True, "lead_id": lead_id, "emails": email_results},
+                        "info", "success",
                         {"agent_id": p["agent_id"], "user_id": user_id,
                          "lead_id": lead_id, "has_phone": bool(p["caller_phone"]),
                          "has_name": bool(p["extracted_name"])})

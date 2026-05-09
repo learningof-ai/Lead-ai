@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import LeadDetail from "@/components/LeadDetail";
+import QualityBadge from "@/components/QualityBadge";
 import {
   Plus, MagnifyingGlass, DownloadSimple, X, FunnelSimple,
 } from "@phosphor-icons/react";
@@ -182,14 +183,19 @@ export default function Leads() {
         <div className="card overflow-hidden" data-testid="leads-table">
           <div className="grid grid-cols-12 px-4 py-2.5 bg-[var(--surface-muted)] text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
             <div className="col-span-3">Name</div>
-            <div className="col-span-2">Phone</div>
+            <div className="col-span-2">Phone / Email</div>
             <div className="col-span-2">Location</div>
             <div className="col-span-1">Budget</div>
             <div className="col-span-2">Status</div>
-            <div className="col-span-2 text-right">Captured</div>
+            <div className="col-span-1">Quality</div>
+            <div className="col-span-1 text-right">Captured</div>
           </div>
           <div className="divide-y">
-            {items.map((l) => (
+            {items.map((l) => {
+              const budget = l.budget || (l.budget_min && l.budget_max
+                ? `$${Math.round(l.budget_min)}–${Math.round(l.budget_max)}`
+                : (l.budget_min ? `$${Math.round(l.budget_min)}+` : ""));
+              return (
               <button key={l.id} onClick={() => focusLead(l.id)} data-testid={`lead-row-${l.id}`}
                       className="w-full text-left grid grid-cols-12 px-4 py-3 hover:bg-[var(--surface-hover)] transition-colors items-center text-[13px]">
                 <div className="col-span-3 flex items-center gap-3 min-w-0">
@@ -198,15 +204,19 @@ export default function Leads() {
                   </div>
                   <span className="truncate font-medium">{l.full_name}</span>
                 </div>
-                <div className="col-span-2 font-mono text-[12px] text-[var(--text-muted)] truncate">{l.phone || "—"}</div>
-                <div className="col-span-2 text-[var(--text-muted)] truncate">{l.location || "—"}</div>
-                <div className="col-span-1 truncate">{l.budget || "—"}</div>
+                <div className="col-span-2 min-w-0">
+                  <div className="font-mono text-[12px] text-[var(--text-muted)] truncate">{l.phone || "—"}</div>
+                  {l.email && <div className="text-[11px] text-[var(--text-faint)] truncate">{l.email}</div>}
+                </div>
+                <div className="col-span-2 text-[var(--text-muted)] truncate">{l.location || l.location_pref || "—"}</div>
+                <div className="col-span-1 truncate">{budget || "—"}</div>
                 <div className="col-span-2"><StatusBadge status={l.status} /></div>
-                <div className="col-span-2 text-right text-[11px] text-[var(--text-faint)] tabular-nums">
+                <div className="col-span-1"><QualityBadge quality={l.quality} score={l.quality_score} /></div>
+                <div className="col-span-1 text-right text-[11px] text-[var(--text-faint)] tabular-nums">
                   {new Date(l.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </div>
               </button>
-            ))}
+            );})}
           </div>
         </div>
       )}

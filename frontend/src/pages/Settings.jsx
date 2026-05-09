@@ -2,8 +2,145 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircle, XCircle, Plus, FloppyDisk, ArrowsClockwise, FileArrowUp, Trash, Plant, Users } from "@phosphor-icons/react";
+import { CheckCircle, XCircle, Plus, FloppyDisk, ArrowsClockwise, FileArrowUp, Trash, Plant, Users, EnvelopeSimple, PaperPlaneTilt } from "@phosphor-icons/react";
 import { toast } from "sonner";
+
+function EmailConfigCard({ user }) {
+  const [cfg, setCfg] = useState(null);
+  const [form, setForm] = useState({
+    resend_api_key: "", from_email: "onboarding@resend.dev", manager_email: "",
+    manager_name: "Property Manager", property_name: "LeaseFlow", send_lead_confirmation: true,
+  });
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testTo, setTestTo] = useState("");
+
+  const load = useCallback(async () => {
+    const r = await api.get("/email/config");
+    setCfg(r.data);
+    setForm((f) => ({
+      ...f,
+      from_email: r.data.from_email || f.from_email,
+      manager_email: r.data.manager_email || f.manager_email,
+      manager_name: r.data.manager_name || f.manager_name,
+      property_name: r.data.property_name || f.property_name,
+      send_lead_confirmation: r.data.send_lead_confirmation,
+    }));
+    setTestTo((t) => t || r.data.manager_email || "");
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    if (!form.manager_email) { toast.error("Manager email required"); return; }
+    setBusy(true);
+    try {
+      const payload = { ...form };
+      if (!payload.resend_api_key) delete payload.resend_api_key;
+      await api.post("/email/config", payload);
+      toast.success("Email config saved");
+      setForm({ ...form, resend_api_key: "" });
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendTest = async () => {
+    if (!testTo) { toast.error("Enter a test recipient"); return; }
+    setTesting(true);
+    try {
+      const r = await api.post("/email/test", { to: testTo });
+      if (r.data.ok) toast.success(`Test email sent (id ${r.data.id?.slice(0, 8) || "ok"})`);
+      else toast.error(r.data.error || "Failed");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Failed");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+
+  return (
+    <section className="card p-6 space-y-4" data-testid="email-config-card">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Integration</div>
+          <h3 className="font-display text-xl tracking-tight flex items-center gap-2">
+            <EnvelopeSimple size={20} weight="duotone" className="text-[var(--brand)]" />
+            Email notifications
+          </h3>
+          <p className="text-[var(--text-muted)] text-[13px] mt-1">Send manager alerts + lead thank-you emails via Resend.</p>
+        </div>
+        {cfg?.has_api_key && cfg?.configured ? (
+          <span className="lf-badge" style={{ background: "var(--success-bg)", color: "var(--success-text)", borderColor: "var(--success-border)" }}>
+            <CheckCircle size={12} weight="fill" /> Active
+          </span>
+        ) : (
+          <span className="lf-badge" style={{ background: "var(--surface-muted)", color: "var(--text-muted)", borderColor: "var(--border)" }}>
+            <XCircle size={12} weight="duotone" /> Not configured
+          </span>
+        )}
+      </div>
+
+      <div className="card p-4 text-[12px]" style={{ background: "var(--info-bg)", borderColor: "var(--info-border)", color: "var(--info-text)" }}>
+        <div className="font-medium mb-1">Quick setup:</div>
+        <ol className="list-decimal pl-5 space-y-0.5">
+          <li>Sign up at <a className="underline" target="_blank" rel="noreferrer" href="https://resend.com">resend.com</a></li>
+          <li>Dashboard → API Keys → create one (starts with <code>re_</code>)</li>
+          <li>Paste it below, set the manager email, save</li>
+          <li>Optional: verify <code>form.rentals</code> in Resend → Domains for a custom <code>from</code> address</li>
+        </ol>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">
+            Resend API key {cfg?.has_api_key && <span className="ml-2 text-[var(--success-text)] normal-case font-normal">(saved — paste new key only to replace)</span>}
+          </label>
+          <input data-testid="resend-key-input" type="password" className="input font-mono" placeholder="re_..." value={form.resend_api_key} onChange={set("resend_api_key")} />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">From address</label>
+          <input data-testid="from-email-input" className="input font-mono" value={form.from_email} onChange={set("from_email")} placeholder="onboarding@resend.dev" />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Manager email *</label>
+          <input data-testid="manager-email-input" type="email" required className="input" value={form.manager_email} onChange={set("manager_email")} />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Manager name</label>
+          <input className="input" value={form.manager_name} onChange={set("manager_name")} />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Property name</label>
+          <input className="input" value={form.property_name} onChange={set("property_name")} />
+        </div>
+        <label className="col-span-2 flex items-center gap-2 text-[13px] mt-1">
+          <input type="checkbox" checked={form.send_lead_confirmation} onChange={set("send_lead_confirmation")} data-testid="send-lead-thanks" />
+          Also send the lead a thank-you email when their address is captured
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border)]">
+        <button onClick={save} disabled={busy || user?.role !== "owner"} className="btn-primary" data-testid="email-save-btn">
+          <FloppyDisk size={14} weight="duotone" /> {busy ? "Saving..." : "Save email config"}
+        </button>
+        {cfg?.has_api_key && (
+          <>
+            <input className="input flex-1 max-w-xs" placeholder="recipient@email.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} data-testid="email-test-to" />
+            <button onClick={sendTest} disabled={testing} className="btn-secondary" data-testid="email-test-btn">
+              <PaperPlaneTilt size={14} weight="duotone" /> {testing ? "Sending..." : "Send preview"}
+            </button>
+          </>
+        )}
+      </div>
+      {user?.role !== "owner" && <p className="text-[12px] text-[var(--text-muted)]">Only the owner can configure email.</p>}
+    </section>
+  );
+}
 
 function GoogleSheetsCard({ user }) {
   const [cfg, setCfg] = useState(null);
@@ -59,7 +196,10 @@ function GoogleSheetsCard({ user }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Integration</div>
-          <h3 className="font-display text-xl tracking-tight">Google Sheets sync</h3>
+          <h3 className="font-display text-xl tracking-tight flex items-center gap-2">
+            <FileArrowUp size={20} weight="duotone" className="text-[var(--brand)]" />
+            Google Sheets sync
+          </h3>
           <p className="text-[var(--text-muted)] text-[13px] mt-1">Push every new lead to a live Google Sheet your team can review.</p>
         </div>
         {cfg?.connected ? (
@@ -207,6 +347,7 @@ export default function Settings() {
         title="Settings"
         subtitle="Manage integrations, team, and demo data."
       />
+      <EmailConfigCard user={user} />
       <GoogleSheetsCard user={user} />
       <TeamCard />
       <DemoDataCard user={user} />
